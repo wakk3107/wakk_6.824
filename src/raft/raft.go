@@ -585,7 +585,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// election逻辑
 	go rf.electionLoop()
-	// leader逻辑 labA不用这样
+	// leader逻辑 labA有关persist的都可以不用
 	go rf.appendEntriesLoop()
 
 	DPrintf("Raftnode[%d]启动", me)
