@@ -224,7 +224,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		DPrintf("RaftNode[%d] Return RequestVote, CandidatesId[%d] VoteGranted[%v] ", rf.me, args.CandidateId, reply.VoteGranted)
 	}()
 
-	// 任期不如我大，拒绝投票
+	// 任期不如我大，拒绝投票	已经有个更高任期的节点请求过了
 	if args.Term < rf.currentTerm {
 		return
 	}
