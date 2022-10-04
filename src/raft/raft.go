@@ -254,12 +254,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		if len(rf.log) != 0 {
 			lastLogTerm = rf.log[len(rf.log)-1].Term
 		}
-		if args.LastLogTerm < lastLogTerm || args.LastLogIndex < len(rf.log) {
-			return
+		if args.LastLogTerm > lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= len(rf.log)) {
+			rf.votedFor = args.CandidateId
+			reply.VoteGranted = true
+			rf.lastActiveTime = time.Now() // 为其他人投票，那么重置自己的下次投票时间
 		}
-		rf.votedFor = args.CandidateId
-		reply.VoteGranted = true
-		rf.lastActiveTime = time.Now() // 为其他人投票，那么重置自己的下次投票时间
+
 	}
 	rf.persist()
 }
@@ -691,7 +691,7 @@ func (rf *Raft) appendEntriesLoop() {
 }
 func (rf *Raft) applyLogLoop(applyCh chan ApplyMsg) {
 	for !rf.killed() {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		var appliedMsgs = make([]ApplyMsg, 0)
 
