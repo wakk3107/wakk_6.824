@@ -254,6 +254,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		if len(rf.log) != 0 {
 			lastLogTerm = rf.log[len(rf.log)-1].Term
 		}
+		//figure8,困这里好久，妈的
+		//https://zhuanlan.zhihu.com/p/143239437
 		if args.LastLogTerm > lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= len(rf.log)) {
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
