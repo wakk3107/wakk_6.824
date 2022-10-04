@@ -592,18 +592,11 @@ func (rf *Raft) appendEntriesLoop() {
 				return
 			}
 			rf.lastBroadcastTime = time.Now()
-
-			// 并发RPC心跳
-			type AppendResult struct {
-				peerId int
-				resp   *AppendEntriesReply
-			}
-
-			for peerId := 0; peerId < len(rf.peers); peerId++ {
-				if peerId == rf.me {
+			for id := 0; id < len(rf.peers); id++ {
+				if id == rf.me {
 					continue
 				}
-
+				var peerId = id
 				args := AppendEntriesArgs{}
 				args.Term = rf.currentTerm
 				args.LeaderId = rf.me
@@ -618,18 +611,18 @@ func (rf *Raft) appendEntriesLoop() {
 				DPrintf("RaftNode[%d] appendEntries starts,  currentTerm[%d] peer[%d] logIndex=[%d] nextIndex[%d] matchIndex[%d] args.Entries[%d] commitIndex[%d]",
 					rf.me, rf.currentTerm, peerId, len(rf.log), rf.nextIndex[peerId], rf.matchIndex[peerId], len(args.Entries), rf.commitIndex)
 				// log相关字段在lab-2A不处理
-				go func(id int, args1 *AppendEntriesArgs) {
+				go func() {
 					// DPrintf("RaftNode[%d] appendEntries starts, myTerm[%d] peerId[%d]", rf.me, args1.Term, id)
 					reply := AppendEntriesReply{}
-					if ok := rf.sendAppendEntries(id, args1, &reply); ok {
+					if ok := rf.sendAppendEntries(peerId, &args, &reply); ok {
 						rf.mu.Lock()
 						defer rf.mu.Unlock()
 						defer func() {
 							DPrintf("RaftNode[%d] appendEntries ends,  currentTerm[%d]  peer[%d] logIndex=[%d] nextIndex[%d] matchIndex[%d] commitIndex[%d]",
-								rf.me, rf.currentTerm, id, len(rf.log), rf.nextIndex[id], rf.matchIndex[id], rf.commitIndex)
+								rf.me, rf.currentTerm, peerId, len(rf.log), rf.nextIndex[peerId], rf.matchIndex[peerId], rf.commitIndex)
 						}()
 						// 如果不是rpc前的leader状态了，那么啥也别做了
-						if rf.currentTerm != args1.Term {
+						if rf.currentTerm != args.Term {
 							return
 						}
 						if reply.Term > rf.currentTerm { // 变成follower
@@ -641,8 +634,8 @@ func (rf *Raft) appendEntriesLoop() {
 							return
 						}
 						if reply.Success { // 同步日志成功
-							rf.nextIndex[id] = args.PrevLogIndex + len(args.Entries) + 1
-							rf.matchIndex[id] = rf.nextIndex[id] - 1
+							rf.nextIndex[peerId] = args.PrevLogIndex + len(args.Entries) + 1
+							rf.matchIndex[peerId] = rf.nextIndex[peerId] - 1
 
 							// 数字N, 让peer[i]的大多数>=N
 							// peer[0]' index=2
@@ -686,7 +679,7 @@ func (rf *Raft) appendEntriesLoop() {
 
 						}
 					}
-				}(peerId, &args)
+				}()
 			}
 		}()
 	}
