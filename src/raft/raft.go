@@ -478,6 +478,16 @@ func (rf *Raft) electionLoop() {
 						if finishCount == len(rf.peers) || voteCount > len(rf.peers)/2 {
 							goto VOTE_END
 						}
+						//主要为了防止可以参与选举的节点少于一半导致一直等待，超时就应该重开！
+					case <-time.After(2 * time.Second):
+						rf.mu.Lock()
+						rf.role = ROLE_FOLLOWER
+						rf.leaderId = -1
+						rf.currentTerm = maxTerm
+						rf.votedFor = -1
+						rf.persist()
+						return
+
 					}
 				}
 			VOTE_END:
