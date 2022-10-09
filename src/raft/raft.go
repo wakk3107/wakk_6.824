@@ -19,6 +19,7 @@ package raft
 
 import (
 	//	"bytes"
+	"bytes"
 	"math/rand"
 	"sort"
 	"sync"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	//	"6.824/labgob"
+	"6.824/labgob"
 	"6.824/labrpc"
 )
 
@@ -130,6 +132,14 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	DPrintf("RaftNode[%d] persist starts, currentTerm[%d] voteFor[%d] log[%v]", rf.me, rf.currentTerm, rf.votedFor, rf.log)
+	rf.persister.SaveRaftState(data)
 }
 
 //
@@ -152,6 +162,22 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	//避免WAARNING: Decoding into a non-default variable/field int may not work
+	var currentTerm int
+	var votedFor int
+	var log []*LogEntry
+	if d.Decode(&currentTerm) != nil ||
+		d.Decode(&votedFor) != nil || d.Decode(&log) != nil {
+		return
+	} else {
+		rf.currentTerm = currentTerm
+		rf.votedFor = votedFor
+		rf.log = log
+	}
 }
 
 //
@@ -256,11 +282,18 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		}
 		//figure8,困这里好久，妈的
 		//https://zhuanlan.zhihu.com/p/143239437
-		if args.LastLogTerm > lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= len(rf.log)) {
-			rf.votedFor = args.CandidateId
-			reply.VoteGranted = true
-			rf.lastActiveTime = time.Now() // 为其他人投票，那么重置自己的下次投票时间
+		// if args.LastLogTerm > lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= len(rf.log)) {
+		// 	rf.votedFor = args.CandidateId
+		// 	reply.VoteGranted = true
+		// 	rf.lastActiveTime = time.Now() // 为其他人投票，那么重置自己的下次投票时间
+		// }
+		//Raft 节点不会给最后一条 log 的 term 小于自己最后一条 term 或者 term 相等，但是最后一条 log 的 index 小于自身，Raft 都不会给这些机器投票。
+		if args.LastLogTerm < lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex < len(rf.log)) {
+			return
 		}
+		rf.votedFor = args.CandidateId
+		reply.VoteGranted = true
+		rf.lastActiveTime = time.Now() // 为其他人投票，那么重置自己的下次投票时间
 
 	}
 	rf.persist()
@@ -452,6 +485,15 @@ func (rf *Raft) electionLoop() {
 						if finishCount == len(rf.peers) || voteCount > len(rf.peers)/2 {
 							goto VOTE_END
 						}
+						//主要为了防止可以参与选举的节点少于一半导致一直等待，超时就应该重开！
+					case <-time.After(2 * time.Second):
+						rf.mu.Lock()
+						rf.role = ROLE_FOLLOWER
+						rf.leaderId = -1
+						rf.currentTerm = maxTerm
+						rf.votedFor = -1
+						rf.persist()
+						return
 					}
 				}
 			VOTE_END:
