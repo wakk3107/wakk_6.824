@@ -18,11 +18,32 @@ package raft
 //
 
 import (
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"6.824/labrpc"
+)
+
+// election
+const (
+	// magic number
+	voted_nil int = -12345
+)
+
+// appendEntries
+const (
+	magic_index int = 0
+	magic_term  int = -1
+)
+
+// ticker
+const (
+	gap_time            int = 3
+	election_base_time  int = 300
+	election_range_time int = 100
+	heartbeat_time      int = 50
 )
 
 //
@@ -58,6 +79,207 @@ type Raft struct {
 	// private
 	electionTime  time.Time
 	heartbeatTime time.Time
+}
+
+//
+// as each Raft peer becomes aware that successive log entries are
+// committed, the peer should send an ApplyMsg to the service (or
+// tester) on the same server, via the applyCh passed to Make(). set
+// CommandValid to true to indicate that the ApplyMsg contains a newly
+// committed log entry.
+//
+// in part 2D you'll want to send other kinds of messages (e.g.,
+// snapshots) on the applyCh, but set CommandValid to false for these
+// other uses.
+//
+type ApplyMsg struct {
+	CommandValid bool
+	Command      interface{}
+	CommandIndex int
+	CommandTerm  int
+
+	// For 2D:
+	SnapshotValid bool
+	Snapshot      []byte
+	SnapshotTerm  int
+	SnapshotIndex int
+}
+
+//
+// example RequestVote RPC arguments structure.
+// field names must start with capital letters!
+//
+type RequestVoteArgs struct {
+	// Your data here (2A, 2B).
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
+}
+
+type RequestVoteReply struct {
+	// Your data here (2A).
+	Term        int
+	VoteGranted bool
+}
+
+type AppendEntriesArgs struct {
+	Term         int
+	LeaderId     int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []Entry
+	LeaderCommit int
+}
+
+type AppendEntriesReply struct {
+	Term    int
+	Success bool
+	XTerm   int // for fast backup
+	XIndex  int
+	XLen    int
+}
+
+type InstallSnapshotArgs struct {
+	// Your data here (2A, 2B).
+	Term              int
+	LeaderId          int
+	LastIncludedIndex int
+	LastIncludedTerm  int
+	Data              []byte
+}
+
+type InstallSnapshotReply struct {
+	Term int
+}
+
+//
+// example code to send a RequestVote RPC to a server.
+// server is the index of the target server in rf.peers[].
+// expects RPC arguments in args.
+// fills in *reply with RPC reply, so caller should
+// pass &reply.
+// the types of the args and reply passed to Call() must be
+// the same as the types of the arguments declared in the
+// handler function (including whether they are pointers).
+//
+// The labrpc package simulates a lossy network, in which servers
+// may be unreachable, and in which requests and replies may be lost.
+// Call() sends a request and waits for a reply. If a reply arrives
+// within a timeout interval, Call() returns true; otherwise
+// Call() returns false. Thus Call() may not return for a while.
+// A false return can be caused by a dead server, a live server that
+// can't be reached, a lost request, or a lost reply.
+//
+// Call() is guaranteed to return (perhaps after a delay) *except* if the
+// handler function on the server side does not return.  Thus there
+// is no need to implement your own timeouts around Call().
+//
+// look at the comments in ../labrpc/labrpc.go for more details.
+//
+// if you're having trouble getting RPC to work, check that you've
+// capitalized all field names in structs passed over RPC, and
+// that the caller passes the address of the reply struct with &, not
+// the struct itself.
+//
+func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+	DPrintf("S%d send RequestVote request to %d {%+v}", rf.me, server, args)
+	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	if !ok {
+		DPrintf("S%d call (RequestVote)rpc to C%d error", rf.me, server)
+		return ok
+	}
+	DPrintf("S%d get RequestVote response from %d {%+v}", rf.me, server, reply)
+	return ok
+}
+
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	DPrintf("S%d send AppendEntries request to %d {%+v}", rf.me, server, args)
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	if !ok {
+		DPrintf("S%d call (AppendEntries)rpc to C%d error", rf.me, server)
+		return ok
+	}
+	DPrintf("S%d get AppendEntries response from %d {%+v}", rf.me, server, reply)
+	return ok
+}
+
+func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) bool {
+	DPrintf("S%d send InstallSnapshot request to %d {%+v}", rf.me, server, args)
+	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
+	if !ok {
+		DPrintf("S%d call (InstallSnapshot)rpc to C%d error", rf.me, server)
+		return ok
+	}
+	DPrintf("S%d get InstallSnapshot response from %d {%+v}", rf.me, server, reply)
+	return ok
+}
+
+// a new goroutine to run it
+func (rf *Raft) applyLog() {
+	for rf.killed() == false {
+		rf.mu.Lock()
+		for rf.lastApplied >= rf.commitIndex {
+			rf.applyCond.Wait()
+		}
+		commitIndex := rf.commitIndex
+		commit, _ := rf.transfer(rf.commitIndex)
+		applied, _ := rf.transfer(rf.lastApplied)
+		entries := make([]Entry, commit-applied)
+		copy(entries, rf.log[applied+1:commit+1])
+		rf.mu.Unlock()
+
+		for _, entry := range entries {
+			rf.applyCh <- ApplyMsg{
+				CommandValid: true,
+				Command:      entry.Cmd,
+				CommandIndex: entry.Index,
+				CommandTerm:  entry.Term,
+			}
+		}
+
+		rf.mu.Lock()
+		DPrintf("S%d apply %v - %v", rf.me, rf.lastApplied, commitIndex)
+		if commitIndex > rf.lastApplied {
+			rf.lastApplied = commitIndex
+		}
+		rf.mu.Unlock()
+	}
+}
+
+//
+// the service using Raft (e.g. a k/v server) wants to start
+// agreement on the next command to be appended to Raft's log. if this
+// server isn't the leader, returns false. otherwise start the
+// agreement and return immediately. there is no guarantee that this
+// command will ever be committed to the Raft log, since the leader
+// may fail or lose an election. even if the Raft instance has been killed,
+// this function should return gracefully.
+//
+// the first return value is the index that the command will appear at
+// if it's ever committed. the second return value is the current
+// term. the third return value is true if this server believes it is
+// the leader.
+//
+func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.status != leader {
+		DPrintf("S%d Not leader cmd: %+v", rf.me, command)
+		return -1, -1, false
+	}
+
+	index := rf.lastLogIndex() + 1
+	rf.log = append(rf.log, Entry{index, rf.currentTerm, command})
+	rf.persist()
+
+	// defer utils.Debug(utils.DLog2, "S%d append log: %+v", rf.me, rf.log)
+	DPrintf("S%d cmd: %+v, logIndex: %d", rf.me, command, rf.lastLogIndex())
+
+	rf.doAppendEntries()
+
+	return rf.lastLogIndex(), rf.currentTerm, true
 }
 
 //
@@ -144,4 +366,55 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go rf.applyLog()
 
 	return rf
+}
+func (rf *Raft) electionTimeout() bool {
+	return time.Now().After(rf.electionTime)
+}
+
+func (rf *Raft) heartbeatTimeout() bool {
+	return time.Now().After(rf.heartbeatTime)
+}
+
+func (rf *Raft) resetElectionTime() {
+	sleep_time := rand.Intn(election_range_time) + election_base_time
+	rf.electionTime = time.Now().Add(time.Duration(sleep_time) * time.Millisecond)
+}
+
+func (rf *Raft) resetHeartbeatTime() {
+	rf.heartbeatTime = time.Now().Add(time.Duration(heartbeat_time) * time.Millisecond)
+}
+
+// The ticker go routine starts a new election if this peer hasn't received
+// heartsbeats recently.
+func (rf *Raft) ticker() {
+	for rf.killed() == false {
+		// Your code here to check if a leader election should
+		// be started and to randomize sleeping time using
+		// time.Sleep().
+		rf.mu.Lock()
+		switch rf.status {
+		case follower:
+			if rf.electionTimeout() {
+				rf.TurnTo(candidate)
+				DPrintf("S%d Election timeout, Start election, T%d", rf.me, rf.currentTerm)
+				rf.doElection()
+				rf.resetElectionTime()
+			}
+		case candidate:
+			if rf.electionTimeout() {
+				rf.TurnTo(candidate)
+				DPrintf("S%d Election timeout, re-start election, T%d", rf.me, rf.currentTerm)
+				rf.doElection()
+				rf.resetElectionTime()
+			}
+		case leader:
+			if rf.heartbeatTimeout() {
+				DPrintf("S%d Heartbeat timeout, send heartbeat boardcast, T%d", rf.me, rf.currentTerm)
+				rf.doAppendEntries()
+				rf.resetHeartbeatTime()
+			}
+		}
+		rf.mu.Unlock()
+		time.Sleep(time.Duration(gap_time) * time.Millisecond)
+	}
 }
