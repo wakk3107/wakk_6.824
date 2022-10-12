@@ -24,7 +24,8 @@ func (kv *KVServer) snapshoter() {
 }
 
 func (kv *KVServer) isNeedSnapshot() bool {
-	if kv.maxraftstate != -1 && kv.rf.RaftPersistSize() > int(threshold*float32(kv.maxraftstate)) {
+	//如果maxraftstate为-1，则快照功能关闭。
+	if kv.maxraftstate != -1 && kv.rf.RaftPersistSize() > kv.maxraftstate {
 		return true
 	}
 	return false

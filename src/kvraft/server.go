@@ -17,7 +17,7 @@ type KVServer struct {
 	applyCh chan raft.ApplyMsg
 	dead    int32 // set by Kill()
 
-	maxraftstate int // snapshot if log grows this big
+	maxraftstate int // maxraftstate表示允许的持久Raft状态的最大字节大小
 
 	// Your definitions here.
 	KvMap          *KV

@@ -76,7 +76,7 @@ func (ck *Clerk) sendCmd(key string, value string, OpType OPType) string {
 		ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
 		time.Sleep(retry_timeout)
 	}
-	panic("10s not reply")
+	//panic("10s not reply")
 	return ""
 }
 

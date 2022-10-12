@@ -153,7 +153,12 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	}
 	//before := len(rf.log)
 	// let last snapshot node as dummy node
-	rf.log = rf.log[idx:]
+	var entries []Entry
+	for i := idx; i < len(rf.log); i++ {
+		entries = append(entries, rf.log[i])
+	}
+	rf.log = entries
+	//不要这样：rf.log = rf.log[idx:]， 持有引用 会导致被压缩掉的log不会被gc自动释放
 	rf.log[0].Cmd = nil // dummy node
 	rf.persistSnapshot(snapshot)
 	//fmt.Printf("S%d idx: %d log len before: %d after: %d\n", rf.me, idx, before, len(rf.log))
