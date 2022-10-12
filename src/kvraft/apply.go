@@ -5,7 +5,7 @@ import (
 )
 
 func (kv *KVServer) applier() {
-	for kv.killed() == false {
+	for !kv.killed() {
 		select {
 		case msg := <-kv.applyCh:
 			DPrintf("S%d apply msg: %+v", kv.me, msg)
@@ -64,7 +64,8 @@ func (kv *KVServer) applier() {
 				// 无效命令
 			}
 		default:
-			time.Sleep(gap_time)
+			//不许等！可能会导致RaftStateSize过大通不过测试 ，主要就是 lastApplied 不能及时变化，导致不能进行快照，压缩日志
+			//time.Sleep(gap_time)
 		}
 	}
 }

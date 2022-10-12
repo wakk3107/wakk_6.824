@@ -238,7 +238,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return -1, -1, false
 	}
 
-	index := rf.lastLogIndex() + 1
+	index := rf.lastLogIndex() + 1 // index 最初为 1
 	rf.log = append(rf.log, Entry{index, rf.currentTerm, command})
 	rf.persist()
 
@@ -283,6 +283,20 @@ func (rf *Raft) leaderInit() {
 	rf.resetHeartbeatTime()
 }
 
+// func (rf *Raft) ClearLogs() {
+// 	begin := rf.frontLogIndex()
+// 	end := rf.lastLog().Index
+
+// 	entries := make([]Entry, end-begin)
+// 	// use first log entry as last snapshot index
+// 	// also it's dummy node!!
+// 	entries = append(entries, rf.frontLog())
+// 	for i := begin; i < end; i++ {
+// 		v, _ := rf.getEntry(i)
+// 		entries = append(entries, v)
+// 	}
+// 	rf.log = entries
+// }
 func (rf *Raft) init() {
 	rf.status = follower
 	rf.applyCond = sync.NewCond(&rf.mu)

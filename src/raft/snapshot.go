@@ -108,7 +108,11 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 	} else {
 		// in range, ignore out of range error
 		idx, _ := rf.transfer(lastIncludedIndex)
-		rf.log = rf.log[idx:]
+		entries := make([]Entry, 0)
+		for i := idx; i < len(rf.log); i++ {
+			entries = append(entries, rf.log[i])
+		}
+		rf.log = entries
 	}
 	// dummy node
 	rf.log[0].Term = lastIncludedTerm
@@ -153,7 +157,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	}
 	//before := len(rf.log)
 	// let last snapshot node as dummy node
-	var entries []Entry
+	entries := make([]Entry, 0)
 	for i := idx; i < len(rf.log); i++ {
 		entries = append(entries, rf.log[i])
 	}
