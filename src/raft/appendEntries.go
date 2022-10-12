@@ -147,28 +147,23 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.TurnTo(follower)
 	}
 
-	if rf.status != follower {
-		// If AppendEntries RPC received from new leader:
-		// convert to follower
-		rf.TurnTo(follower)
-	}
+	// if rf.status != follower {
+	// 	// If AppendEntries RPC received from new leader:
+	// 	// convert to follower
+	// 	rf.TurnTo(follower)
+	// }
 
 	reply.Success = true
 	reply.Term = rf.currentTerm
 	//  prevent election timeouts (§5.2)
 	rf.resetElectionTime()
-
-	// heartbeat, return
-	// if args.PrevLogIndex == magic_index && args.PrevLogTerm == magic_term {
-	// 	return
-	// }
-
+	//发过来的日志快照里
 	if args.PrevLogIndex < rf.frontLogIndex() {
 		reply.XTerm, reply.XIndex, reply.Success = -2, rf.frontLogIndex()+1, false
 		DPrintf("S%d args's prevLogIndex too smaller(%v < %v)", rf.me, args.PrevLogIndex, rf.frontLogIndex())
 		return
 	}
-
+	//日志断层
 	if args.PrevLogIndex > rf.lastLogIndex() {
 		reply.Success = false
 		reply.XTerm = -1
@@ -199,8 +194,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.Entries != nil && len(args.Entries) != 0 {
 		if rf.isConflict(args) {
 			rf.log = rf.log[:idx+1]
-			entries := make([]Entry, len(args.Entries))
-			copy(entries, args.Entries)
+			entries := args.Entries
 			rf.log = append(rf.log, entries...)
 			// DPrintf("S%d conflict, truncate log: %+v", rf.me, rf.log)
 		} else {
@@ -225,10 +219,7 @@ func (rf *Raft) isConflict(args *AppendEntriesArgs) bool {
 	base_index := args.PrevLogIndex + 1
 	for i, entry := range args.Entries {
 		entry_rf, err := rf.getEntry(i + base_index)
-		if err < 0 {
-			return true
-		}
-		if entry_rf.Term != entry.Term {
+		if err < 0 || entry_rf.Term != entry.Term {
 			return true
 		}
 	}

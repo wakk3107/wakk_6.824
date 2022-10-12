@@ -215,38 +215,6 @@ func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply
 	return ok
 }
 
-// a new goroutine to run it
-func (rf *Raft) applyLog() {
-	for rf.killed() == false {
-		rf.mu.Lock()
-		for rf.lastApplied >= rf.commitIndex {
-			rf.applyCond.Wait()
-		}
-		commitIndex := rf.commitIndex
-		commit, _ := rf.transfer(rf.commitIndex)
-		applied, _ := rf.transfer(rf.lastApplied)
-		entries := make([]Entry, commit-applied)
-		copy(entries, rf.log[applied+1:commit+1])
-		rf.mu.Unlock()
-
-		for _, entry := range entries {
-			rf.applyCh <- ApplyMsg{
-				CommandValid: true,
-				Command:      entry.Cmd,
-				CommandIndex: entry.Index,
-				CommandTerm:  entry.Term,
-			}
-		}
-
-		rf.mu.Lock()
-		DPrintf("S%d apply %v - %v", rf.me, rf.lastApplied, commitIndex)
-		if commitIndex > rf.lastApplied {
-			rf.lastApplied = commitIndex
-		}
-		rf.mu.Unlock()
-	}
-}
-
 //
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
@@ -416,5 +384,37 @@ func (rf *Raft) ticker() {
 		}
 		rf.mu.Unlock()
 		time.Sleep(time.Duration(gap_time) * time.Millisecond)
+	}
+}
+
+// a new goroutine to run it
+func (rf *Raft) applyLog() {
+	for rf.killed() == false {
+		rf.mu.Lock()
+		for rf.lastApplied >= rf.commitIndex {
+			rf.applyCond.Wait()
+		}
+		commitIndex := rf.commitIndex
+		commit, _ := rf.transfer(rf.commitIndex)
+		applied, _ := rf.transfer(rf.lastApplied)
+		entries := make([]Entry, commit-applied)
+		copy(entries, rf.log[applied+1:commit+1])
+		rf.mu.Unlock()
+
+		for _, entry := range entries {
+			rf.applyCh <- ApplyMsg{
+				CommandValid: true,
+				Command:      entry.Cmd,
+				CommandIndex: entry.Index,
+				CommandTerm:  entry.Term,
+			}
+		}
+
+		rf.mu.Lock()
+		DPrintf("S%d apply %v - %v", rf.me, rf.lastApplied, commitIndex)
+		if commitIndex > rf.lastApplied {
+			rf.lastApplied = commitIndex
+		}
+		rf.mu.Unlock()
 	}
 }
