@@ -45,6 +45,12 @@ func Get(cfg *config, ck *Clerk, key string, log *OpLog, cli int) string {
 	start := time.Now().UnixNano()
 	v := ck.Get(key)
 	end := time.Now().UnixNano()
+
+	if start > end {
+		fmt.Printf("time error: start: %d end: %d\n", start, end)
+		panic("time error")
+	}
+
 	cfg.op()
 	if log != nil {
 		log.Append(porcupine.Operation{
@@ -63,6 +69,12 @@ func Put(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) 
 	start := time.Now().UnixNano()
 	ck.Put(key, value)
 	end := time.Now().UnixNano()
+
+	if start > end {
+		fmt.Printf("time error: start: %d end: %d\n", start, end)
+		panic("time error")
+	}
+
 	cfg.op()
 	if log != nil {
 		log.Append(porcupine.Operation{
@@ -79,6 +91,12 @@ func Append(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli in
 	start := time.Now().UnixNano()
 	ck.Append(key, value)
 	end := time.Now().UnixNano()
+
+	if start > end {
+		fmt.Printf("time error: start: %d end: %d\n", start, end)
+		panic("time error")
+	}
+
 	cfg.op()
 	if log != nil {
 		log.Append(porcupine.Operation{
@@ -363,6 +381,7 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 		}
 	}
 
+	// fmt.Printf("opLog: %+v\n", opLog)
 	res, info := porcupine.CheckOperationsVerbose(models.KvModel, opLog.Read(), linearizabilityCheckTimeout)
 	if res == porcupine.Illegal {
 		file, err := ioutil.TempFile("", "*.html")
