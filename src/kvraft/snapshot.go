@@ -2,20 +2,21 @@ package kvraft
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"time"
 
 	"6.824/labgob"
 )
 
-const threshold float32 = 0.8
-const snapshotLogGap int = 3
-
 func (kv *KVServer) snapshoter() {
 	for kv.killed() == false {
 		kv.mu.Lock()
-		if kv.isNeedSnapshot() && kv.lastApplied > kv.lastSnapshot+snapshotLogGap {
+		if kv.isNeedSnapshot() && kv.lastApplied > kv.lastSnapshot {
+			fmt.Println("压缩日志前，SnapShotSize：", kv.rf.RaftPersistSize())
 			kv.doSnapshot(kv.lastApplied)
+			fmt.Println("压缩日志后，SnapShotSize：", kv.rf.RaftPersistSize())
+
 			kv.lastSnapshot = kv.lastApplied
 		}
 		kv.mu.Unlock()
@@ -26,6 +27,9 @@ func (kv *KVServer) snapshoter() {
 func (kv *KVServer) isNeedSnapshot() bool {
 	//如果maxraftstate为-1，则快照功能关闭。
 	if kv.maxraftstate != -1 && kv.rf.RaftPersistSize() > kv.maxraftstate {
+		if kv.rf.RaftPersistSize() > 5000 {
+			fmt.Printf("S%v need SnapShot , now RaftStateSize is:%v\n", kv.me, kv.rf.RaftPersistSize())
+		}
 		return true
 	}
 	return false
@@ -42,9 +46,9 @@ func (kv *KVServer) doSnapshot(commandIndex int) {
 	kv.rf.Snapshot(commandIndex, w.Bytes())
 }
 
-func (kv *KVServer) setSnapshot(snapshot []byte) {
+func (kv *KVServer) setSnapshot(snapshot []byte) bool {
 	if snapshot == nil || len(snapshot) < 1 { // bootstrap without any state?
-		return
+		return false
 	}
 
 	DPrintf("S%d setSnapshot", kv.me)
@@ -61,4 +65,5 @@ func (kv *KVServer) setSnapshot(snapshot []byte) {
 		kv.KvMap = &kvMap
 		kv.LastCmdContext = lastCmdContext
 	}
+	return true
 }

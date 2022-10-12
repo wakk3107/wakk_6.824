@@ -19,7 +19,7 @@ func (kv *KVServer) applier() {
 				kv.mu.Unlock()
 			} else if msg.CommandValid {
 				kv.mu.Lock()
-				//执行进度不能超过 lastApplied
+				//不执行过期消息
 				if msg.CommandIndex <= kv.lastApplied {
 					DPrintf("S%d out time apply(%d <= %d): %+v", kv.me, msg.CommandIndex, kv.lastApplied, msg)
 					kv.mu.Unlock()
