@@ -81,6 +81,12 @@ type Raft struct {
 	heartbeatTime time.Time
 }
 
+type Entry struct {
+	Index int
+	Term  int
+	Cmd   interface{}
+}
+
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -182,6 +188,7 @@ type InstallSnapshotReply struct {
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 //
+
 func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
 
 	// Your code here (2D).
@@ -233,6 +240,70 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // term. the third return value is true if this server believes it is
 // the leader.
 //
+
+func (rf *Raft) lastLog() Entry {
+	return rf.log[len(rf.log)-1]
+}
+
+func (rf *Raft) lastLogIndex() int {
+	return rf.log[len(rf.log)-1].Index
+}
+
+func (rf *Raft) getEntry(index int) (Entry, int) {
+	begin := 0
+	end := rf.lastLogIndex()
+	// left open, right close
+	// fuck range!
+	if index < begin || index > end {
+		DPrintf("S%d log out of range: %d, [%d, %d]", rf.me, index, begin, end)
+		return Entry{magic_index, magic_term, nil}, -1
+	}
+	return rf.log[index-begin], 0
+}
+
+func (rf *Raft) isUpToDate(lastLogIndex int, lastLogTerm int) bool {
+	entry := rf.lastLog()
+	index := entry.Index
+	term := entry.Term
+	if term == lastLogTerm {
+		return lastLogIndex >= index
+	}
+	return lastLogTerm > term
+}
+
+//以半数以上 follower的 matchIndex 来确定 Leader 的 commitIndex
+func (rf *Raft) toCommit() {
+	// append entries before commit
+	if rf.commitIndex >= rf.lastLogIndex() {
+		return
+	}
+
+	for i := rf.lastLogIndex(); i > rf.commitIndex; i-- {
+		entry, err := rf.getEntry(i)
+		if err < 0 {
+			continue
+		}
+
+		if entry.Term != rf.currentTerm {
+			return
+		}
+
+		cnt := 1 // 1 => self
+		for j, match := range rf.matchIndex {
+			if j != rf.me && match >= i {
+				cnt++
+			}
+			if cnt > len(rf.peers)/2 {
+				rf.commitIndex = i
+				DPrintf("S%d commit to %v", rf.me, rf.commitIndex)
+				rf.applyCond.Signal()
+				return
+			}
+		}
+	}
+
+	DPrintf("S%d don't have half replicated from %v to %v now", rf.me, rf.commitIndex, rf.lastLogIndex())
+}
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -399,8 +470,8 @@ func (rf *Raft) applyLog() {
 			rf.applyCond.Wait()
 		}
 		commitIndex := rf.commitIndex
-		commit, _ := rf.transfer(rf.commitIndex)
-		applied, _ := rf.transfer(rf.lastApplied)
+		commit := rf.commitIndex
+		applied := rf.lastApplied
 		entries := make([]Entry, commit-applied)
 		copy(entries, rf.log[applied+1:commit+1])
 		rf.mu.Unlock()

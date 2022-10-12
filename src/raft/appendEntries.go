@@ -28,11 +28,7 @@ func (rf *Raft) appendTo(peer int) {
 	}
 
 	prevLogIndex := rf.nextIndex[peer] - 1
-	idx, err := rf.transfer(prevLogIndex)
-	if err < 0 {
-		rf.mu.Unlock()
-		return
-	}
+	idx := prevLogIndex
 
 	args.PrevLogIndex = rf.log[idx].Index
 	args.PrevLogTerm = rf.log[idx].Term
@@ -71,9 +67,7 @@ func (rf *Raft) appendTo(peer int) {
 	}
 
 	if reply.Success {
-		// utils.Debug(utils.DTrace, "S%d before nextIndex:{%+v} ", rf.me, rf.nextIndex)
 		rf.nextIndex[peer] = args.PrevLogIndex + len(args.Entries) + 1
-		// utils.Debug(utils.DTrace, "S%d after nextIndex:{%+v}", rf.me, rf.nextIndex)
 		rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
 		rf.toCommit()
 		return
@@ -155,10 +149,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	idx, err := rf.transfer(args.PrevLogIndex)
-	if err < 0 {
-		return
-	}
+	idx := args.PrevLogIndex
 
 	if rf.log[idx].Term != args.PrevLogTerm {
 		reply.Success = false
