@@ -1,39 +1,35 @@
 package shardkv
 
+import (
+	"sync"
+	"sync/atomic"
 
-import "6.824/labrpc"
-import "6.824/raft"
-import "sync"
-import "6.824/labgob"
-
-
-
-type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-}
+	"6.824/labgob"
+	"6.824/labrpc"
+	"6.824/raft"
+	"6.824/shardctrler"
+)
 
 type ShardKV struct {
-	mu           sync.Mutex
-	me           int
-	rf           *raft.Raft
-	applyCh      chan raft.ApplyMsg
-	make_end     func(string) *labrpc.ClientEnd
-	gid          int
-	ctrlers      []*labrpc.ClientEnd
+	mu      sync.Mutex
+	me      int
+	rf      *raft.Raft
+	applyCh chan raft.ApplyMsg
+	dead    int32 // set by Kill()
+	makeEnd func(string) *labrpc.ClientEnd
+	gid     int
+	// ctrlers      []*labrpc.ClientEnd
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-}
+	shards       map[int]*Shard
+	cmdRespChans map[IndexAndTerm]chan OpResp
+	lastApplied  int
+	lastSnapshot int
 
-
-func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
-}
-
-func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+	lastConfig    shardctrler.Config
+	currentConfig shardctrler.Config
+	sc            *shardctrler.Clerk
 }
 
 //
@@ -43,10 +39,20 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 // turn off debug output from this instance.
 //
 func (kv *ShardKV) Kill() {
-	kv.rf.Kill()
+	atomic.StoreInt32(&kv.dead, 1)
 	// Your code here, if desired.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	//fmt.Printf("---kill\n")
+	kv.doSnapshot(kv.lastApplied)
+	kv.rf.Kill()
+	Debug(dWarn, "G%+v {S%+v} close shards: %+v config: %+v", kv.gid, kv.me, kv.shards, kv.currentConfig)
 }
 
+func (kv *ShardKV) killed() bool {
+	z := atomic.LoadInt32(&kv.dead)
+	return z == 1
+}
 
 //
 // servers[] contains the ports of the servers in this group.
@@ -76,26 +82,41 @@ func (kv *ShardKV) Kill() {
 // StartServer() must return quickly, so it should start goroutines
 // for any long-running work.
 //
-func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int, gid int, ctrlers []*labrpc.ClientEnd, make_end func(string) *labrpc.ClientEnd) *ShardKV {
+func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int, gid int, ctrlers []*labrpc.ClientEnd, makeEnd func(string) *labrpc.ClientEnd) *ShardKV {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
-	labgob.Register(Op{})
+	labgob.Register(Command{})
+	labgob.Register(CmdArgs{})
+	labgob.Register(shardctrler.Config{})
+	labgob.Register(PullDataReply{})
+	labgob.Register(PullDataArgs{})
 
 	kv := new(ShardKV)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
-	kv.make_end = make_end
+	kv.makeEnd = makeEnd
 	kv.gid = gid
-	kv.ctrlers = ctrlers
-
-	// Your initialization code here.
+	// kv.ctrlers = ctrlers
 
 	// Use something like this to talk to the shardctrler:
 	// kv.mck = shardctrler.MakeClerk(kv.ctrlers)
-
-	kv.applyCh = make(chan raft.ApplyMsg)
+	kv.applyCh = make(chan raft.ApplyMsg, 5)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.sc = shardctrler.MakeClerk(ctrlers)
 
+	// Your initialization code here.
+	kv.shards = make(map[int]*Shard)
+	kv.cmdRespChans = make(map[IndexAndTerm]chan OpResp)
+	kv.lastApplied = 0
+	kv.lastSnapshot = 0
+
+	// load data from persister
+	kv.setSnapshot(persister.ReadSnapshot())
+
+	// long-time goroutines
+	go kv.applier()
+	go kv.snapshoter()
+	kv.startMonitor()
 
 	return kv
 }
