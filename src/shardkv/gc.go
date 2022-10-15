@@ -4,8 +4,10 @@ import "sync"
 
 func (kv *ShardKV) gcAction() {
 	kv.mu.Lock()
+	//得到所有成功迁移过来的分片ID
 	gid2shardIDs := kv.getShardIDsByStatus(GCing, &kv.lastConfig)
 	var wg sync.WaitGroup
+	//帮该分片的原 server 和自己 清理/更新 一下该组分片
 	for gid, shardIDs := range gid2shardIDs {
 		wg.Add(1)
 		servers := kv.lastConfig.Groups[gid]

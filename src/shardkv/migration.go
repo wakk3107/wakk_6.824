@@ -82,6 +82,7 @@ func (kv *ShardKV) applyInsertShards(shardsInfo *PullDataReply) *OpResp {
 		for shardId, shardData := range shardsInfo.Shards {
 			if kv.shards[shardId].Status == Pulling {
 				kv.shards[shardId] = shardData.deepCopy()
+				//部分成功不代表整个迁移过程成功，这算中间态
 				kv.shards[shardId].Status = GCing
 			} else {
 				Debug(dWarn, "G%+v {S%+v} shard %d is not Pulling: %+v", kv.gid, kv.me, shardId, kv.shards[shardId])

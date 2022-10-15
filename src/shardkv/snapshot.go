@@ -10,11 +10,10 @@ import (
 	"6.824/shardctrler"
 )
 
-const threshold float32 = 0.8
 const snapshotLogGap int = 10
 
 func (kv *ShardKV) snapshoter() {
-	for kv.killed() == false {
+	for !kv.killed() {
 		kv.mu.Lock()
 		if kv.isNeedSnapshot() {
 			kv.doSnapshot(kv.lastApplied)
@@ -33,7 +32,7 @@ func (kv *ShardKV) isNeedSnapshot() bool {
 	}
 
 	if kv.maxraftstate != -1 {
-		if kv.rf.RaftPersistSize() > int(threshold*float32(kv.maxraftstate)) ||
+		if kv.rf.RaftPersistSize() > kv.maxraftstate ||
 			kv.lastApplied > kv.lastSnapshot+snapshotLogGap {
 			return true
 		}
