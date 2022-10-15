@@ -70,6 +70,7 @@ func NewConfigModel(me int) *ConfigModel {
 	return &cfg
 }
 
+// return gid ->shard[ ]
 func (cm *ConfigModel) getGroup2Shards(config *Config) map[int][]int {
 	group2shard := map[int][]int{}
 	for gid := range config.Groups {
@@ -83,6 +84,7 @@ func (cm *ConfigModel) getGroup2Shards(config *Config) map[int][]int {
 	return group2shard
 }
 
+//返回持有最少 shard 数的 gid
 func (cm *ConfigModel) getMinShards(group2shard map[int][]int) int {
 	var keys []int
 	for k := range group2shard {
@@ -102,7 +104,9 @@ func (cm *ConfigModel) getMinShards(group2shard map[int][]int) int {
 	return gidRet
 }
 
+//返回持有最多 shard 数的 gid
 func (cm *ConfigModel) getMaxShards(group2shard map[int][]int) int {
+	//如存在空闲 shard 先返回空闲 shard 所在 gid
 	if shards, ok := group2shard[magicNullGid]; ok && len(shards) > 0 {
 		return magicNullGid
 	}
@@ -133,6 +137,7 @@ func (cm *ConfigModel) reBalance(config *Config) {
 
 	// 1 shard - 1 group, 1 group - n shards
 	group2shard := cm.getGroup2Shards(config)
+	//不断从持有数最多的那里那一个 shard 给持有数少的，直到所有 group 差距小于等于 1
 	for {
 		src := cm.getMaxShards(group2shard)
 		dst := cm.getMinShards(group2shard)
@@ -181,6 +186,7 @@ func (cm *ConfigModel) leave(GIDs []int) Err {
 			delete(newConfig.Groups, gid)
 		}
 		if shards, ok := group2shard[gid]; ok {
+			// 统统放入空闲 shard 该去的 group
 			for _, shard := range shards {
 				newConfig.Shards[shard] = magicNullGid
 			}
