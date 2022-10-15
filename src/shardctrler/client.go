@@ -44,9 +44,9 @@ func (ck *Clerk) sendCmd(args CommandArgs) CommandReply {
 
 	for {
 		reply := CommandReply{}
-
+		//这里的 ok 指的是 Rpc是否调用成功
 		ok := ck.servers[ck.leaderId].Call("ShardCtrler.Command", &args, &reply)
-
+		//如果该 Server 无法响应 RPC 则换一个
 		if !ok {
 			ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
 			time.Sleep(retry_timeout)
@@ -56,7 +56,7 @@ func (ck *Clerk) sendCmd(args CommandArgs) CommandReply {
 		if reply.Err == OK {
 			return reply
 		}
-
+		//如果该 Server 不是 Leader 则换下一个
 		ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
 		time.Sleep(retry_timeout)
 	}

@@ -135,7 +135,6 @@ func (cm *ConfigModel) reBalance(config *Config) {
 		return
 	}
 
-	// 1 shard - 1 group, 1 group - n shards
 	group2shard := cm.getGroup2Shards(config)
 	//不断从持有数最多的那里那一个 shard 给持有数少的，直到所有 group 差距小于等于 1
 	for {
