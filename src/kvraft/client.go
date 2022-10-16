@@ -71,6 +71,9 @@ func (ck *Clerk) sendCmd(key string, value string, OpType OPType) string {
 			return reply.Value
 		} else if reply.Err == ErrNoKey {
 			return ""
+		} else if reply.Err == ErrTimeout {
+			//超时的话就再试试，并不是没找对 Server
+			continue
 		}
 
 		ck.leaderId = (ck.leaderId + 1) % len(ck.servers)

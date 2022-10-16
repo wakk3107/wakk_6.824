@@ -97,11 +97,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	return kv
 }
 
-// Handler
 func (kv *KVServer) Command(args *CmdArgs, reply *CmdReply) {
-	defer DPrintf("S%d args: %+v reply: %+v", kv.me, args, reply)
-
 	kv.mu.Lock()
+	//去重，如果非幂等请求重复了，则返回上一次的回答
 	if args.OpType != OpGet && kv.isDuplicate(args.ClientId, args.SeqId) {
 		context := kv.LastCmdContext[args.ClientId]
 		reply.Value, reply.Err = context.Reply.Value, context.Reply.Err
@@ -117,51 +115,41 @@ func (kv *KVServer) Command(args *CmdArgs, reply *CmdReply) {
 		Key:      args.Key,
 		Value:    args.Value,
 	}
+	//若不是 leader 的话该 cmd 不会传给 raft 层的，start的内部实现
 	index, term, is_leader := kv.rf.Start(cmd)
 	if !is_leader {
 		reply.Value, reply.Err = "", ErrWrongLeader
 		return
 	}
-
 	kv.mu.Lock()
 	it := IndexAndTerm{index, term}
+	//创建 Wait Channel 等待回答
 	ch := make(chan OpResp, 1)
+	//根据索引放起来，以便 Server 的 ApplyLoop 执行完后，能够将 Reply 正确的塞入 Wait Channel
 	kv.cmdRespChans[it] = ch
 	kv.mu.Unlock()
 
 	defer func() {
+		//结束完记得删除 Wait Channel 清理空间
 		kv.mu.Lock()
-		// close(kv.cmdRespChans[index])
 		delete(kv.cmdRespChans, it)
 		kv.mu.Unlock()
 		close(ch)
 	}()
-
+	//若超时了，就告诉客户端该情况
 	t := time.NewTimer(cmd_timeout)
 	defer t.Stop()
 
 	for {
 		kv.mu.Lock()
 		select {
+		//返回结果
 		case resp := <-ch:
-			DPrintf("S%d have applied, resp: %+v", kv.me, resp)
 			reply.Value, reply.Err = resp.Value, resp.Err
 			kv.mu.Unlock()
 			return
+			//超时，让客户端一会再试
 		case <-t.C:
-		priority:
-			for {
-				select {
-				case resp := <-ch:
-					DPrintf("S%d have applied, resp: %+v", kv.me, resp)
-					reply.Value, reply.Err = resp.Value, resp.Err
-					kv.mu.Unlock()
-					return
-				default:
-					break priority
-				}
-			}
-			DPrintf("S%d timeout", kv.me)
 			reply.Value, reply.Err = "", ErrTimeout
 			kv.mu.Unlock()
 			return
