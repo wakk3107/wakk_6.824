@@ -32,10 +32,6 @@ func NewDeleteShardsCommand(pullArgs *PullDataArgs) Command {
 	return Command{DeleteShards, *pullArgs}
 }
 
-func NewEmptyEntryCommand() Command {
-	return Command{EmptyEntry, nil}
-}
-
 type CommandType uint8
 
 const (
@@ -43,7 +39,6 @@ const (
 	Configuration
 	InsertShards
 	DeleteShards
-	EmptyEntry
 )
 
 // Handler
@@ -71,6 +66,7 @@ func (kv *ShardKV) Command(args *CmdArgs, reply *CmdReply) {
 	reply.Value, reply.Err = resp.Value, resp.Err
 }
 
+// 当传入的切片 Id 属于自己管辖，且该切片的状态属于可提供服务状态
 func (kv *ShardKV) canServe(shardID int) bool {
 	return kv.currentConfig.Shards[shardID] == kv.gid && (kv.shards[shardID].Status == Serving || kv.shards[shardID].Status == GCing)
 }

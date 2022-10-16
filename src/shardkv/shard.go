@@ -6,7 +6,7 @@ const (
 	Serving   ShardStatus = iota
 	Pulling               //本来不属于我，现在属于我
 	BePulling             //本来属于我，现在不属于我
-	GCing
+	GCing                 //Gcing 属于中间态，刚嫁过来，但也可以提供服务，主要是方便 移走方 和 移入方的清理和更新
 )
 
 type Shard struct {

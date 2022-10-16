@@ -85,8 +85,11 @@ func (ck *Clerk) sendCmd(key string, value string, OpType OPType) string {
 
 	t0 := time.Now()
 	for time.Since(t0).Seconds() < 15 {
+		//找到该 key 所在的切片
 		shard := key2shard(key)
+		//找到该切片所在的 Group
 		gid := ck.config.Shards[shard]
+		//轮询该 Group 成员， 找到该 Raft 组中的 Leader
 		if servers, ok := ck.config.Groups[gid]; ok {
 			// try each server for the shard.
 			for si := 0; si < len(servers); si++ {
@@ -103,7 +106,7 @@ func (ck *Clerk) sendCmd(key string, value string, OpType OPType) string {
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
-		// ask controler for the latest configuration.
+		// 跳出来说明该切片不在该Group，说明配置变更，主动要求更新配置
 		ck.config = ck.sm.Query(-1)
 	}
 
