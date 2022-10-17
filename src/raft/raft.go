@@ -485,7 +485,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.leaderId = -1
 		// 继续向下走
 	}
-
+	// 选出了符合条件的新 Leader ,调整自己身份，不要接着发起选举
+	if rf.role != ROLE_FOLLOWER {
+		rf.role = ROLE_FOLLOWER
+	}
 	// 认识新的leader
 	rf.leaderId = args.LeaderId
 	// 刷新活跃时间
