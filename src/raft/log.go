@@ -62,7 +62,7 @@ func (rf *Raft) toCommit() {
 	if rf.commitIndex >= rf.lastLogIndex() {
 		return
 	}
-
+	// 从最新的日志索引开始遍历到已提交的日志索引
 	for i := rf.lastLogIndex(); i > rf.commitIndex; i-- {
 		entry, err := rf.getEntry(i)
 		if err < 0 {
@@ -74,6 +74,7 @@ func (rf *Raft) toCommit() {
 		}
 
 		cnt := 1 // 1 => self
+		// 遍历所有节点，若一半都大于这个界限，则更新 commitIndex 为这个
 		for j, match := range rf.matchIndex {
 			if j != rf.me && match >= i {
 				cnt++

@@ -15,7 +15,6 @@ func (rf *Raft) doInstallSnapshot(peer int) {
 	}
 
 	args.Data = rf.persister.ReadSnapshot()
-	//copy(args.Data, rf.persister.ReadSnapshot())
 	rf.mu.Unlock()
 
 	reply := InstallSnapshotReply{}
@@ -52,7 +51,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	defer rf.mu.Unlock()
 
 	DPrintf("S%d S%d installSnapshot", rf.me, args.LeaderId)
-	defer DPrintf("S%d arg: %+v reply: %+v", rf.me, args, reply)
 
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
@@ -76,7 +74,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		DPrintf("S%d args's snapshot too old(%d < %d)", rf.me, args.LastIncludedIndex, rf.commitIndex)
 		return
 	}
-
 	go func() {
 		rf.applyCh <- ApplyMsg{
 			SnapshotValid: true,
@@ -124,9 +121,6 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 	if lastIncludedIndex > rf.commitIndex {
 		rf.commitIndex = lastIncludedIndex
 	}
-
-	// DPrintf("S%d after CondInstallSnapshot(lastApplied: %d commitIndex: %d) {%+v}", rf.me, rf.lastApplied, rf.commitIndex, rf.log)
-
 	return true
 }
 
@@ -156,6 +150,5 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.log = rf.log[idx:]
 	rf.log[0].Cmd = nil // dummy node
 	rf.persistSnapshot(snapshot)
-	//fmt.Printf("S%d idx: %d log len before: %d after: %d\n", rf.me, idx, before, len(rf.log))
-	// DPrintf("S%d call Snapshot success, index: %d {%+v}", rf.me, index, rf.log)
+
 }

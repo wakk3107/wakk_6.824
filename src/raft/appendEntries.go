@@ -9,6 +9,7 @@ func (rf *Raft) doAppendEntries() {
 		}
 
 		wantSendIndex := rf.nextIndex[i] - 1
+		// 若需要的 log 索引已经被快照存储了，这时直接发送快照
 		if wantSendIndex < rf.frontLogIndex() {
 			go rf.doInstallSnapshot(i)
 		} else {
@@ -76,45 +77,47 @@ func (rf *Raft) appendTo(peer int) {
 	}
 
 	if reply.Success {
-		// utils.Debug(utils.DTrace, "S%d before nextIndex:{%+v} ", rf.me, rf.nextIndex)
 		rf.nextIndex[peer] = args.PrevLogIndex + len(args.Entries) + 1
-		// utils.Debug(utils.DTrace, "S%d after nextIndex:{%+v}", rf.me, rf.nextIndex)
 		rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
 		rf.toCommit()
 		return
 	}
+	// https://mit-public-courses-cn-translatio.gitbook.io/mit6-824/lecture-07-raft2/7.3-hui-fu-jia-su-backup-acceleration
 
+	// case 3 :没发生冲突，但是发少了
 	if reply.XTerm == -1 { // null slot
 		rf.nextIndex[peer] -= reply.XLen
-	} else if reply.XTerm >= 0 {
+	} else if reply.XTerm >= 0 { // 发生了冲突，要 XTerm 所对应的 log 及之后的
+
 		termNotExit := true
+		// 开始递减 nextIndex
 		for index := rf.nextIndex[peer] - 1; index >= 1; index-- {
 			entry, err := rf.getEntry(index)
 			if err < 0 {
 				continue
 			}
-
+			// 若比 XTerm 大，则直接遍历下一个
 			if entry.Term > reply.XTerm {
 				continue
 			}
-
+			// case 2: 找到 XTerm 对应的 log 了，取下一个，即第一个大于 XTerm的 log，这时如果再发起 append 请求，prelogindex就会相等了
 			if entry.Term == reply.XTerm {
 				rf.nextIndex[peer] = index + 1
 				termNotExit = false
 				break
 			}
+			// case 1:若都遍历到比 XTerm 小的日志仍然没有发现 XTerm 对应的日志，则尝试去覆盖 XTerm 开始的索引
 			if entry.Term < reply.XTerm {
 				break
 			}
 		}
+		// 没有发现 XTerm 对应的日志，则尝试去覆盖 XTerm 开始的索引
 		if termNotExit {
 			rf.nextIndex[peer] = reply.XIndex
 		}
 	} else {
 		rf.nextIndex[peer] = reply.XIndex
 	}
-
-	// utils.Debug(utils.DTrace, "S%d nextIndex:{%+v}", rf.me, rf.nextIndex)
 	// the smallest nextIndex is 1
 	// otherwise, it will cause out of range error
 	if rf.nextIndex[peer] < 1 {
@@ -146,24 +149,17 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		DPrintf("S%d S%d term larger(%d > %d)", rf.me, args.LeaderId, args.Term, rf.currentTerm)
 		rf.TurnTo(follower)
 	}
-
-	// if rf.status != follower {
-	// 	// If AppendEntries RPC received from new leader:
-	// 	// convert to follower
-	// 	rf.TurnTo(follower)
-	// }
-
 	reply.Success = true
 	reply.Term = rf.currentTerm
 	//  prevent election timeouts (§5.2)
 	rf.resetElectionTime()
-	//发过来的日志快照里
+	// 发过来的日志在快照里
 	if args.PrevLogIndex < rf.frontLogIndex() {
 		reply.XTerm, reply.XIndex, reply.Success = -2, rf.frontLogIndex()+1, false
 		DPrintf("S%d args's prevLogIndex too smaller(%v < %v)", rf.me, args.PrevLogIndex, rf.frontLogIndex())
 		return
 	}
-	//日志断层
+	// 日志断层
 	if args.PrevLogIndex > rf.lastLogIndex() {
 		reply.Success = false
 		reply.XTerm = -1
@@ -175,13 +171,15 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if err < 0 {
 		return
 	}
-
+	// 如果发过来的日志，Term 不匹配，请求覆盖
 	if rf.log[idx].Term != args.PrevLogTerm {
 		reply.Success = false
+		// 设置 XTerm 为 PrevLogIndex 对应的 term
 		reply.XTerm = rf.log[idx].Term
 		reply.XIndex = args.PrevLogIndex
 		// 0 is a dummy entry => quit in index is 1
 		// binary search is better than this way
+		// 找 XTerm 对应的第一个日志的索引
 		for index := idx; index >= 1; index-- {
 			if rf.log[index-1].Term != reply.XTerm {
 				reply.XIndex = index
@@ -212,7 +210,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		DPrintf("S%d commit to %v(lastLogIndex: %d)", rf.me, rf.commitIndex, rf.lastLogIndex())
 		rf.applyCond.Signal()
 	}
-	// DPrintf("S%d log: %+v", rf.me, rf.log)
 }
 
 func (rf *Raft) isConflict(args *AppendEntriesArgs) bool {

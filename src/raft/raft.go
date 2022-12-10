@@ -135,8 +135,8 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term    int
 	Success bool
-	XTerm   int // for fast backup
-	XIndex  int
+	XTerm   int // 为 leader 发过来 PrevLogIndex 在 fowller 中对应位置的 term
+	XIndex  int // 为 follwer 中 XTerm 对应的第一个位置
 	XLen    int
 }
 
