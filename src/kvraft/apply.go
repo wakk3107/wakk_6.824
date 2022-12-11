@@ -64,7 +64,7 @@ func (kv *KVServer) applier() {
 				// 无效命令
 			}
 		default:
-			//不许等！可能会导致RaftStateSize过大通不过测试 ，主要就是 lastApplied 不能及时变化，导致不能进行快照，压缩日志
+			//不许等！可能会导致 RaftStateSize 过大通不过测试 ，主要就是 lastApplied 不能及时变化，导致不能进行快照，压缩日志
 			//time.Sleep(gap_time)
 		}
 	}

@@ -197,8 +197,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			entries := args.Entries
 			rf.log = append(rf.log, entries...)
 			// DPrintf("S%d conflict, truncate log: %+v", rf.me, rf.log)
-		} else {
-			// DPrintf("S%d no conflict, log: %+v", rf.me, rf.log)
 		}
 	} else {
 		DPrintf("S%d args entries nil or length is 0: %v", rf.me, args.Entries)

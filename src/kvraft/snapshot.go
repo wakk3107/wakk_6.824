@@ -45,6 +45,7 @@ func (kv *KVServer) doSnapshot(commandIndex int) {
 	kv.rf.Snapshot(commandIndex, w.Bytes())
 }
 
+// 应用 应用层 快照
 func (kv *KVServer) setSnapshot(snapshot []byte) bool {
 	if snapshot == nil || len(snapshot) < 1 { // bootstrap without any state?
 		return false

@@ -90,23 +90,21 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 //
 // A service wants to switch to snapshot.  Only do so if Raft hasn't
 // have more recent info since it communicate the snapshot on applyCh.
-//
+// 更新快照所造成的元信息的改变，log，lastApplied，commitIndex 等，可以理解为应用 raft 层的快照
 func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
 	// Your code here (2D).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
-	DPrintf("S%d CondInstallSnapshot(lastIncludedTerm: %d lastIncludedIndex: %d lastApplied: %d commitIndex: %d)", rf.me, lastIncludedTerm, lastIncludedIndex, rf.lastApplied, rf.commitIndex)
-
 	if lastIncludedIndex <= rf.commitIndex {
 		DPrintf("S%d refuse, snapshot too old(%d <= %d)", rf.me, lastIncludedIndex, rf.frontLogIndex())
 		return false
 	}
-
+	// 快照覆盖了当前所有记录
 	if lastIncludedIndex > rf.lastLogIndex() {
 		rf.log = make([]Entry, 1)
 	} else {
-		// in range, ignore out of range error
+		// 快照覆盖了部分记录
+		// 多加入了一个快照内的 log，待会会作为 dummy node
 		idx, _ := rf.transfer(lastIncludedIndex)
 		entries := make([]Entry, 0)
 		for i := idx; i < len(rf.log); i++ {

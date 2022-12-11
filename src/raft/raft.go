@@ -369,7 +369,7 @@ func (rf *Raft) resetHeartbeatTime() {
 // The ticker go routine starts a new election if this peer hasn't received
 // heartsbeats recently.
 func (rf *Raft) ticker() {
-	for rf.killed() == false {
+	for !rf.killed() {
 		// Your code here to check if a leader election should
 		// be started and to randomize sleeping time using
 		// time.Sleep().
@@ -403,7 +403,7 @@ func (rf *Raft) ticker() {
 
 // a new goroutine to run it
 func (rf *Raft) applyLog() {
-	for rf.killed() == false {
+	for !rf.killed() {
 		rf.mu.Lock()
 		for rf.lastApplied >= rf.commitIndex {
 			rf.applyCond.Wait()

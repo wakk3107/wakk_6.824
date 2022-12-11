@@ -155,6 +155,7 @@ func (kv *KVServer) Command(args *CmdArgs, reply *CmdReply) {
 			return
 		default:
 			kv.mu.Unlock()
+			// 不知道为啥，就得 sleep，不然过不了 unreliable net, restarts, partitions, random keys, many clients
 			time.Sleep(gap_time)
 		}
 	}
